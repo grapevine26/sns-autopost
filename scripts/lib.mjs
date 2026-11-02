@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 
 const V = process.env.IG_API_VERSION || "v26.0";
-export const ACCOUNTS = JSON.parse(readFileSync("accounts.json", "utf8")); // { hugidam: { username }, saju: { username } }
+export const ACCOUNTS = JSON.parse(readFileSync("accounts.json", "utf8")); // { hugidam: { username, igId }, saju: { username, igId } }
 
 export async function call(host, method, path, token, params = {}) {
   const url = new URL(`https://${host}/${V}${path}`);
@@ -51,7 +51,7 @@ export async function resolveAccounts() {
   for (const name of Object.keys(ACCOUNTS)) {
     const up = name.toUpperCase();
     if (sys) {
-      let igId = process.env[`IG_USER_ID_${up}`];
+      let igId = process.env[`IG_USER_ID_${up}`] || ACCOUNTS[name].igId;
       if (!igId) {
         found ??= await discover(sys);
         igId = found.get(ACCOUNTS[name].username);
@@ -61,8 +61,17 @@ export async function resolveAccounts() {
       out[name] = me.error ? { error: me.error } : { host: "graph.facebook.com", token: sys, igId, username: me.username };
     } else if (process.env[`IG_TOKEN_${up}`]) {
       const token = process.env[`IG_TOKEN_${up}`];
+      // 계정별 키는 두 종류가 나온다: 인스타 로그인 키(graph.instagram.com)와, 비즈니스 포트폴리오를 거쳐 만든
+      // 페이스북 그래프 키(graph.facebook.com, "EAA…"). 앞쪽이 "Cannot parse access token"이면 뒤쪽으로 본다.
       const me = await call("graph.instagram.com", "GET", "/me", token, { fields: "user_id,username" }).catch((e) => ({ error: e.message }));
-      out[name] = me.error ? { error: me.error } : { host: "graph.instagram.com", token, igId: me.user_id, username: me.username };
+      if (!me.error) { out[name] = { host: "graph.instagram.com", token, igId: me.user_id, username: me.username }; continue; }
+      const igId = process.env[`IG_USER_ID_${up}`] || ACCOUNTS[name].igId;
+      const fb = igId
+        ? await call("graph.facebook.com", "GET", `/${igId}`, token, { fields: "username" }).catch((e) => ({ error: e.message }))
+        : { error: "인스타 계정 ID 없음(accounts.json의 igId)" };
+      out[name] = fb.error
+        ? { error: `인스타 로그인: ${me.error} / 페이스북 그래프: ${fb.error}` }
+        : { host: "graph.facebook.com", token, igId, username: fb.username };
     } else {
       out[name] = { error: "접근 키 없음(IG_SYSTEM_TOKEN 또는 IG_TOKEN_" + up + ")" };
     }

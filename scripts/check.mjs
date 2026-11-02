@@ -17,7 +17,7 @@ let bad = 0;
 for (const [account, acc] of Object.entries(accounts)) {
   console.log(`\n■ ${account}`);
   if (acc.error) { console.log(`  ✗ ${acc.error}`); bad++; continue; }
-  console.log(`  연결된 계정: @${acc.username} (ID ${acc.igId})`);
+  console.log(`  연결된 계정: @${acc.username} (ID ${acc.igId}, ${acc.host})`);
   const lim = await call(acc.host, "GET", `/${acc.igId}/content_publishing_limit`, acc.token, { fields: "quota_usage,config" }).catch(() => null);
   if (lim) console.log(`  최근 24시간 게시: ${lim.data?.[0]?.quota_usage ?? "?"} / ${lim.data?.[0]?.config?.quota_total ?? "?"}`);
   const next = queue.filter((q) => q.account === account && !posted[q.id] && kst(q.at) > new Date())
