@@ -1,0 +1,43 @@
+# 매시간 대기열을 보고 올릴 차례가 된 릴스를 계정마다 한 편씩 올린다.
+# GitHub의 예약 실행은 몇 분~수십 분 늦을 수 있다 — 21:00 예정이면 보통 21:10~21:30 사이에 올라간다.
+name: 릴스 자동 게시
+on:
+  schedule:
+    - cron: "7 * * * *" # 매시 7분(정각은 GitHub 예약이 몰려 더 늦어진다)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "올리지 않고 무엇을 올릴지만 보기"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: post
+  cancel-in-progress: false
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 게시
+        env:
+          IG_TOKEN_HUGIDAM: ${{ secrets.IG_TOKEN_HUGIDAM }}
+          IG_TOKEN_SAJU: ${{ secrets.IG_TOKEN_SAJU }}
+          PAGES_BASE: ${{ vars.PAGES_BASE || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+        run: node scripts/post.mjs
+      - name: 올린 기록 저장
+        if: always()
+        run: |
+          if ! git diff --quiet posted.json; then
+            git config user.name "sns-autopost"
+            git config user.email "actions@users.noreply.github.com"
+            git add posted.json
+            git commit -m "게시 기록 $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi

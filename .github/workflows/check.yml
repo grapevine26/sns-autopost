@@ -1,0 +1,16 @@
+# 설정 점검(손으로 실행) — 접근 키·연결된 계정·게시 한도·다음 예정 5편·영상 주소. 아무것도 올리지 않는다.
+name: 점검
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          IG_TOKEN_HUGIDAM: ${{ secrets.IG_TOKEN_HUGIDAM }}
+          IG_TOKEN_SAJU: ${{ secrets.IG_TOKEN_SAJU }}
+          PAGES_BASE: ${{ vars.PAGES_BASE || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
+        run: node scripts/check.mjs
