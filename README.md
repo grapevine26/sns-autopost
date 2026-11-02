@@ -78,10 +78,10 @@ GH_PAT가 없으면 "접근 키 갱신"이 매주 실패 메일을 보낸다. �
 
 - **시각 바꾸기:** `queue.json`에서 그 편의 `"at"`을 고친다(한국 시간, `"2026-11-04 21:00"` 형식). 커밋해서 올리면 다음 실행부터 반영된다.
 - **한 편 빼기:** `queue.json`에서 그 항목을 지운다.
-- **처음부터 다시 만들기:** 이 PC에서 실행한다. `--from` 이전 날짜는 넣지 않는다.
+- **처음부터 다시 만들기:** 이 PC에서 실행한다. `--start`부터 `--every`일마다 한 편씩(기본 매일) 날짜를 매기고, 이미 올린 편(posted.json)은 건너뛴다.
 
 ```bash
-node scripts/build-queue.mjs --from 2026-11-04 --hugidam-time 21:00 --saju-time 22:00
+node scripts/build-queue.mjs --start 2026-11-04 --every 1 --hugidam-time 21:00 --saju-time 22:00
 ```
 
 - **새 릴스 추가:** 영상을 `media/<계정>/`에 넣고 `queue.json`에 항목을 더한다.
