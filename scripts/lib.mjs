@@ -69,9 +69,13 @@ export async function resolveAccounts() {
       const fb = igId
         ? await call("graph.facebook.com", "GET", `/${igId}`, token, { fields: "username" }).catch((e) => ({ error: e.message }))
         : { error: "인스타 계정 ID 없음(accounts.json의 igId)" };
-      out[name] = fb.error
-        ? { error: `인스타 로그인: ${me.error} / 페이스북 그래프: ${fb.error}` }
-        : { host: "graph.facebook.com", token, igId, username: fb.username };
+      if (!fb.error) { out[name] = { host: "graph.facebook.com", token, igId, username: fb.username }; continue; }
+      // ID로 못 보면, 이 키가 볼 수 있는 계정 중 아이디가 같은 것을 찾는다(포트폴리오 경유 키는 ID가 다를 수 있다)
+      const seen = await discover(token);
+      const hit = seen.get(ACCOUNTS[name].username);
+      if (hit) { out[name] = { host: "graph.facebook.com", token, igId: hit, username: ACCOUNTS[name].username }; continue; }
+      const who = await call("graph.facebook.com", "GET", "/me", token, { fields: "id,name" }).catch((e) => ({ error: e.message }));
+      out[name] = { error: `인스타 로그인: ${me.error} / 페이스북 그래프: ${fb.error} / 이 키의 주인: ${who.error || `${who.name} (${who.id})`} / 이 키로 보이는 인스타 계정: ${[...seen].map(([u, i]) => `@${u}(${i})`).join(", ") || "없음"}` };
     } else {
       out[name] = { error: "접근 키 없음(IG_SYSTEM_TOKEN 또는 IG_TOKEN_" + up + ")" };
     }
