@@ -7,17 +7,17 @@
 // media/ 아래 영상을 공개 주소로 내준다(PAGES_BASE).
 //
 // 환경변수
-//   IG_TOKEN_HUGIDAM, IG_TOKEN_SAJU  계정별 접근 키(저장소 Secrets). 없는 계정은 건너뛴다.
+//   IG_SYSTEM_TOKEN                   시스템 사용자 토큰 하나로 두 계정(권장, 만료 없음) — 자세한 건 scripts/lib.mjs
+//   IG_TOKEN_HUGIDAM, IG_TOKEN_SAJU  (예전 방식) 계정별 인스타 로그인 접근 키. 없는 계정은 건너뛴다.
 //   PAGES_BASE                        영상 주소 앞부분 (예: https://아이디.github.io/sns-autopost)
 //   DRY_RUN=1                         올리지 않고 무엇을 올릴지만 출력
 //   LATE_LIMIT_HOURS                  예정 시각에서 이만큼 넘게 지난 편은 올리지 않고 건너뜀 (기본 36)
 import { readFileSync, writeFileSync } from "node:fs";
+import { call, resolveAccounts } from "./lib.mjs";
 
-const API = `https://graph.instagram.com/${process.env.IG_API_VERSION || "v26.0"}`;
 const DRY = process.env.DRY_RUN === "1";
 const LATE_MS = Number(process.env.LATE_LIMIT_HOURS || 36) * 3600_000;
 const PAGES_BASE = (process.env.PAGES_BASE || "").replace(/\/$/, "");
-const TOKENS = { hugidam: process.env.IG_TOKEN_HUGIDAM, saju: process.env.IG_TOKEN_SAJU };
 
 const queue = JSON.parse(readFileSync("queue.json", "utf8"));
 const posted = JSON.parse(readFileSync("posted.json", "utf8"));
@@ -25,21 +25,9 @@ const save = () => writeFileSync("posted.json", JSON.stringify(posted, null, 2) 
 const kst = (s) => new Date(s.replace(" ", "T") + ":00+09:00"); // "2026-11-04 21:00" (한국 시간)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function ig(method, path, token, params = {}) {
-  const url = new URL(API + path);
-  const body = new URLSearchParams({ ...params, access_token: token });
-  const res = method === "GET"
-    ? await fetch(url + "?" + body)
-    : await fetch(url, { method, body });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || json.error) {
-    const e = json.error || {};
-    throw new Error(`${method} ${path} → ${res.status} ${e.message || ""} (code ${e.code ?? "-"}/${e.error_subcode ?? "-"})`);
-  }
-  return json;
-}
-
-async function publish(item, token, igId) {
+async function publish(item, acc) {
+  const ig = (method, path, params) => call(acc.host, method, path, acc.token, params);
+  const igId = acc.igId;
   const videoUrl = `${PAGES_BASE}/${item.video}`;
   // 인스타가 가져가기 전에 우리 쪽에서 먼저 주소가 열리는지 본다(Pages 반영 전이면 여기서 멈춘다)
   const head = await fetch(videoUrl, { method: "HEAD" });
@@ -48,7 +36,7 @@ async function publish(item, token, igId) {
   // 표지: 준비해 둔 표지 이미지(cover)가 있으면 그 주소를, 없으면 영상 속 장면(thumbOffsetMs)을 쓴다
   const coverUrl = item.cover ? `${PAGES_BASE}/${item.cover}` : null;
   if (coverUrl && !(await fetch(coverUrl, { method: "HEAD" })).ok) throw new Error(`표지 주소가 안 열려요: ${coverUrl}`);
-  const container = await ig("POST", `/${igId}/media`, token, {
+  const container = await ig("POST", `/${igId}/media`, {
     media_type: "REELS",
     video_url: videoUrl,
     caption: item.caption,
@@ -59,24 +47,25 @@ async function publish(item, token, igId) {
   let status = "";
   for (let i = 0; i < 48; i++) {
     await sleep(10_000);
-    const s = await ig("GET", `/${container.id}`, token, { fields: "status_code,status" });
+    const s = await ig("GET", `/${container.id}`, { fields: "status_code,status" });
     status = s.status_code;
     if (status === "FINISHED") break;
     if (status === "ERROR" || status === "EXPIRED") throw new Error(`영상 처리 실패: ${s.status || status}`);
   }
   if (status !== "FINISHED") throw new Error(`영상 처리가 8분 안에 끝나지 않았어요(${status})`);
-  const media = await ig("POST", `/${igId}/media_publish`, token, { creation_id: container.id });
-  const info = await ig("GET", `/${media.id}`, token, { fields: "permalink" }).catch(() => ({}));
+  const media = await ig("POST", `/${igId}/media_publish`, { creation_id: container.id });
+  const info = await ig("GET", `/${media.id}`, { fields: "permalink" }).catch(() => ({}));
   return { mediaId: media.id, permalink: info.permalink || "" };
 }
 
 const now = Date.now();
 let failed = 0;
-for (const [account, token] of Object.entries(TOKENS)) {
+const { accounts } = await resolveAccounts();
+for (const [account, acc] of Object.entries(accounts)) {
   const mine = queue.filter((q) => q.account === account && !posted[q.id]).sort((a, b) => kst(a.at) - kst(b.at));
   const due = mine.filter((q) => kst(q.at).getTime() <= now);
-  if (!token) {
-    if (due.length) console.log(`[${account}] 접근 키(IG_TOKEN_${account.toUpperCase()})가 없어 건너뜀 — 올릴 차례 ${due.length}편`);
+  if (acc.error) {
+    if (due.length) { console.error(`[${account}] 올릴 차례 ${due.length}편이 있지만 계정 연결 실패: ${acc.error}`); failed++; }
     continue;
   }
   // 너무 늦은 편은 올리지 않는다(며칠 밀린 걸 한꺼번에 쏟아내지 않게) — 기록만 남긴다
@@ -91,10 +80,9 @@ for (const [account, token] of Object.entries(TOKENS)) {
     continue;
   }
   try {
-    const me = await ig("GET", "/me", token, { fields: "user_id,username" });
-    console.log(`[${account}] @${me.username} ← ${next.id} (예정 ${next.at}) ${next.title || ""}`);
+    console.log(`[${account}] @${acc.username} ← ${next.id} (예정 ${next.at}) ${next.title || ""}`);
     if (DRY) { console.log(`  DRY_RUN: ${PAGES_BASE}/${next.video}\n  ${next.caption.split("\n")[0]}`); continue; }
-    const r = await publish(next, token, me.user_id);
+    const r = await publish(next, acc);
     posted[next.id] = { ...r, at: new Date().toISOString() };
     save();
     console.log(`  올림 ✓ ${r.permalink}`);

@@ -49,6 +49,12 @@ git push -u origin main
 
 ### 4. 접근 키를 Secrets에 넣기
 
+접근 키는 두 방식 중 하나면 된다(`scripts/lib.mjs`).
+
+- **계정별 인스타 로그인 토큰(60일):** Meta 앱 "2. 액세스 토큰 생성"에서 계정마다 받은 키. 아래 2·3번처럼 `IG_TOKEN_HUGIDAM`, `IG_TOKEN_SAJU`에 넣는다. 매주 자동 갱신(5단계 GH_PAT 필요).
+- **시스템 사용자 토큰(만료 없음):** 하나로 두 계정. `IG_SYSTEM_TOKEN`에 넣고, 점검 결과에 계정 ID가 안 잡히면 저장소 Variables에 `IG_USER_ID_HUGIDAM`·`IG_USER_ID_SAJU`를 넣는다. 이때는 5단계가 필요 없다.
+
+
 1. 저장소 **Settings → Secrets and variables → Actions → New repository secret**을 누른다.
 2. 이름 `IG_TOKEN_HUGIDAM`에 후기담 계정의 접근 키를 넣는다.
 3. 이름 `IG_TOKEN_SAJU`에 사주 계정의 접근 키를 넣는다.

@@ -13,6 +13,9 @@ jobs:
         with:
           node-version: 22
       - env:
+          IG_SYSTEM_TOKEN: ${{ secrets.IG_SYSTEM_TOKEN }}
+          IG_USER_ID_HUGIDAM: ${{ vars.IG_USER_ID_HUGIDAM }}
+          IG_USER_ID_SAJU: ${{ vars.IG_USER_ID_SAJU }}
           IG_TOKEN_HUGIDAM: ${{ secrets.IG_TOKEN_HUGIDAM }}
           IG_TOKEN_SAJU: ${{ secrets.IG_TOKEN_SAJU }}
           GH_TOKEN: ${{ secrets.GH_PAT }}

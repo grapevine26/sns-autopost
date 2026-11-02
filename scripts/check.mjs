@@ -1,31 +1,32 @@
-// 설정 점검 — 접근 키가 맞는지, 어느 계정에 연결됐는지, 오늘 게시 한도, 다음 예정 5편, 영상 주소가 열리는지.
+// 설정 점검 — 접근 키가 맞는지, 어느 계정에 연결됐는지, 오늘 게시 한도, 다음 예정 5편, 영상·표지 주소가 열리는지.
 // GitHub Actions의 "점검" 워크플로(check.yml)에서 손으로 실행한다. 아무것도 올리지 않는다.
 import { readFileSync } from "node:fs";
+import { call, resolveAccounts } from "./lib.mjs";
 
-const API = `https://graph.instagram.com/${process.env.IG_API_VERSION || "v26.0"}`;
 const PAGES_BASE = (process.env.PAGES_BASE || "").replace(/\/$/, "");
-const TOKENS = { hugidam: process.env.IG_TOKEN_HUGIDAM, saju: process.env.IG_TOKEN_SAJU };
 const queue = JSON.parse(readFileSync("queue.json", "utf8"));
 const posted = JSON.parse(readFileSync("posted.json", "utf8"));
 const kst = (s) => new Date(s.replace(" ", "T") + ":00+09:00");
+const opens = async (path) => (PAGES_BASE ? (await fetch(`${PAGES_BASE}/${path}`, { method: "HEAD" })).ok : null);
+
+console.log(`접근 방식: ${process.env.IG_SYSTEM_TOKEN ? "시스템 사용자 토큰(만료 없음)" : "계정별 인스타 로그인 토큰(60일, 매주 자동 갱신)"}`);
+const { accounts, discovered } = await resolveAccounts();
+if (discovered) console.log(`이 토큰으로 보이는 인스타 계정: ${[...discovered].map(([u, id]) => `@${u}(${id})`).join(", ") || "없음"}`);
 
 let bad = 0;
-for (const [account, token] of Object.entries(TOKENS)) {
+for (const [account, acc] of Object.entries(accounts)) {
   console.log(`\n■ ${account}`);
-  if (!token) { console.log(`  접근 키 없음 (Secrets에 IG_TOKEN_${account.toUpperCase()}를 넣어 주세요)`); bad++; continue; }
-  try {
-    const me = await (await fetch(`${API}/me?fields=user_id,username,account_type&access_token=${token}`)).json();
-    if (me.error) throw new Error(me.error.message);
-    console.log(`  연결된 계정: @${me.username} (${me.account_type})`);
-    const lim = await (await fetch(`${API}/${me.user_id}/content_publishing_limit?fields=quota_usage,config&access_token=${token}`)).json();
-    if (!lim.error) console.log(`  최근 24시간 게시: ${lim.data?.[0]?.quota_usage ?? "?"} / ${lim.data?.[0]?.config?.quota_total ?? "?"}`);
-  } catch (e) { console.log(`  접근 키 오류: ${e.message}`); bad++; }
+  if (acc.error) { console.log(`  ✗ ${acc.error}`); bad++; continue; }
+  console.log(`  연결된 계정: @${acc.username} (ID ${acc.igId})`);
+  const lim = await call(acc.host, "GET", `/${acc.igId}/content_publishing_limit`, acc.token, { fields: "quota_usage,config" }).catch(() => null);
+  if (lim) console.log(`  최근 24시간 게시: ${lim.data?.[0]?.quota_usage ?? "?"} / ${lim.data?.[0]?.config?.quota_total ?? "?"}`);
   const next = queue.filter((q) => q.account === account && !posted[q.id] && kst(q.at) > new Date())
     .sort((a, b) => kst(a.at) - kst(b.at)).slice(0, 5);
   for (const q of next) {
-    const ok = PAGES_BASE ? (await fetch(`${PAGES_BASE}/${q.video}`, { method: "HEAD" })).ok : null;
-    console.log(`  ${q.at}  ${q.id}  ${q.title || ""}  영상 주소 ${ok === null ? "확인 안 함(PAGES_BASE 없음)" : ok ? "OK" : "열리지 않음 ✗"}`);
-    if (ok === false) bad++;
+    const v = await opens(q.video), c = q.cover ? await opens(q.cover) : true;
+    const mark = v === null ? "주소 확인 안 함(PAGES_BASE 없음)" : v && c ? "영상·표지 OK" : "영상·표지 주소가 안 열림 ✗";
+    console.log(`  ${q.at}  ${q.id}  ${q.title || ""}  ${mark}`);
+    if (v === false || c === false) bad++;
   }
 }
 process.exit(bad ? 1 : 0);

@@ -4,6 +4,11 @@
 import { execFileSync } from "node:child_process";
 
 const TOKENS = { IG_TOKEN_HUGIDAM: process.env.IG_TOKEN_HUGIDAM, IG_TOKEN_SAJU: process.env.IG_TOKEN_SAJU };
+// 시스템 사용자 토큰은 만료되지 않는다 — 계정별 토큰이 없으면 할 일이 없다
+if (process.env.IG_SYSTEM_TOKEN && !process.env.IG_TOKEN_HUGIDAM && !process.env.IG_TOKEN_SAJU) {
+  console.log("시스템 사용자 토큰을 쓰고 있어 갱신할 필요가 없어요");
+  process.exit(0);
+}
 const canStore = Boolean(process.env.GH_TOKEN);
 let bad = 0;
 for (const [name, token] of Object.entries(TOKENS)) {
