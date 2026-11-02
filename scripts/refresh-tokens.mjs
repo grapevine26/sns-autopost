@@ -1,18 +1,15 @@
-// 인스타 접근 키 갱신 — 장기 접근 키는 60일이면 만료된다. 매주 갱신해서 새 키를 저장소 Secrets에 다시 넣는다.
-// Secrets를 바꾸려면 GitHub 개인 접근 토큰(GH_PAT, 이 저장소의 Secrets 쓰기 권한)이 필요하다 — 없으면 갱신 결과만 알려 주고 실패로 끝내
-// (GitHub가 메일로 알려 줌) 손으로 바꾸게 한다.
+// 인스타 접근 키 갱신 — 인스타 로그인 키(graph.instagram.com)는 60일이면 만료돼 매주 갱신해 Secrets에 다시 넣는다.
+// 지금 쓰는 키는 Meta 앱의 시스템 사용자 키(페이스북 그래프, 만료 없음)라 대부분 할 일이 없다 — 그런 키는 건너뛴다.
+// 인스타 로그인 키를 쓸 때만 GH_PAT(이 저장소 Secrets 쓰기 권한)가 필요하다.
 import { execFileSync } from "node:child_process";
 
 const TOKENS = { IG_TOKEN_HUGIDAM: process.env.IG_TOKEN_HUGIDAM, IG_TOKEN_SAJU: process.env.IG_TOKEN_SAJU };
-// 시스템 사용자 토큰은 만료되지 않는다 — 계정별 토큰이 없으면 할 일이 없다
-if (process.env.IG_SYSTEM_TOKEN && !process.env.IG_TOKEN_HUGIDAM && !process.env.IG_TOKEN_SAJU) {
-  console.log("시스템 사용자 토큰을 쓰고 있어 갱신할 필요가 없어요");
-  process.exit(0);
-}
 const canStore = Boolean(process.env.GH_TOKEN);
 let bad = 0;
 for (const [name, token] of Object.entries(TOKENS)) {
   if (!token) { console.log(`${name}: 없음 — 건너뜀`); continue; }
+  const ig = await (await fetch(`https://graph.instagram.com/me?fields=username&access_token=${token}`)).json();
+  if (ig.error) { console.log(`${name}: 시스템 사용자 키(만료 없음) — 갱신할 필요 없음`); continue; }
   const r = await (await fetch(`https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${token}`)).json();
   if (r.error || !r.access_token) { console.log(`${name}: 갱신 실패 — ${r.error?.message || "응답 없음"}`); bad++; continue; }
   const days = Math.round((r.expires_in || 0) / 86400);
