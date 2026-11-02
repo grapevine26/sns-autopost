@@ -9,15 +9,13 @@ const posted = JSON.parse(readFileSync("posted.json", "utf8"));
 const kst = (s) => new Date(s.replace(" ", "T") + ":00+09:00");
 const opens = async (path) => (PAGES_BASE ? (await fetch(`${PAGES_BASE}/${path}`, { method: "HEAD" })).ok : null);
 
-console.log(`접근 방식: ${process.env.IG_SYSTEM_TOKEN ? "시스템 사용자 토큰(만료 없음)" : "계정별 인스타 로그인 토큰(60일, 매주 자동 갱신)"}`);
-const { accounts, discovered } = await resolveAccounts();
-if (discovered) console.log(`이 토큰으로 보이는 인스타 계정: ${[...discovered].map(([u, id]) => `@${u}(${id})`).join(", ") || "없음"}`);
+const { accounts } = await resolveAccounts();
 
 let bad = 0;
 for (const [account, acc] of Object.entries(accounts)) {
   console.log(`\n■ ${account}`);
   if (acc.error) { console.log(`  ✗ ${acc.error}`); bad++; continue; }
-  console.log(`  연결된 계정: @${acc.username} (ID ${acc.igId}, ${acc.host})`);
+  console.log(`  연결된 계정: @${acc.username} (ID ${acc.igId}, ${acc.host}, 키 ${acc.via})`);
   const lim = await call(acc.host, "GET", `/${acc.igId}/content_publishing_limit`, acc.token, { fields: "quota_usage,config" }).catch(() => null);
   if (lim) console.log(`  최근 24시간 게시: ${lim.data?.[0]?.quota_usage ?? "?"} / ${lim.data?.[0]?.config?.quota_total ?? "?"}`);
   const next = queue.filter((q) => q.account === account && !posted[q.id] && kst(q.at) > new Date())
