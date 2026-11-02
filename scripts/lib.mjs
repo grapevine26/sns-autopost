@@ -58,7 +58,13 @@ export async function resolveAccounts() {
       }
       if (!igId) { out[name] = { error: `인스타 계정 ID를 못 찾음 — 저장소 Variables에 IG_USER_ID_${up}를 넣어 주세요(점검 결과의 목록 참고)` }; continue; }
       const me = await call("graph.facebook.com", "GET", `/${igId}`, sys, { fields: "username" }).catch((e) => ({ error: e.message }));
-      out[name] = me.error ? { error: me.error } : { host: "graph.facebook.com", token: sys, igId, username: me.username };
+      if (!me.error) { out[name] = { host: "graph.facebook.com", token: sys, igId, username: me.username }; continue; }
+      found ??= await discover(sys);
+      const hit = found.get(ACCOUNTS[name].username);
+      if (hit) { out[name] = { host: "graph.facebook.com", token: sys, igId: hit, username: ACCOUNTS[name].username }; continue; }
+      const who = await call("graph.facebook.com", "GET", "/me", sys, { fields: "id,name" }).catch((e) => ({ error: e.message }));
+      const perms = await call("graph.facebook.com", "GET", "/me/permissions", sys).catch(() => ({ data: [] }));
+      out[name] = { error: `${me.error} / 키 주인: ${who.error || `${who.name} (${who.id})`} / 권한: ${(perms.data || []).filter((p) => p.status === "granted").map((p) => p.permission).join(",") || "?"}` };
     } else if (process.env[`IG_TOKEN_${up}`]) {
       const token = process.env[`IG_TOKEN_${up}`];
       // 계정별 키는 두 종류가 나온다: 인스타 로그인 키(graph.instagram.com)와, 비즈니스 포트폴리오를 거쳐 만든
