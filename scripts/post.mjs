@@ -45,12 +45,15 @@ async function publish(item, token, igId) {
   const head = await fetch(videoUrl, { method: "HEAD" });
   if (!head.ok) throw new Error(`영상 주소가 안 열려요(${head.status}): ${videoUrl}`);
 
+  // 표지: 준비해 둔 표지 이미지(cover)가 있으면 그 주소를, 없으면 영상 속 장면(thumbOffsetMs)을 쓴다
+  const coverUrl = item.cover ? `${PAGES_BASE}/${item.cover}` : null;
+  if (coverUrl && !(await fetch(coverUrl, { method: "HEAD" })).ok) throw new Error(`표지 주소가 안 열려요: ${coverUrl}`);
   const container = await ig("POST", `/${igId}/media`, token, {
     media_type: "REELS",
     video_url: videoUrl,
     caption: item.caption,
     share_to_feed: "true",
-    ...(item.thumbOffsetMs != null ? { thumb_offset: String(item.thumbOffsetMs) } : {}),
+    ...(coverUrl ? { cover_url: coverUrl } : item.thumbOffsetMs != null ? { thumb_offset: String(item.thumbOffsetMs) } : {}),
   });
   // 영상 처리 대기 — 보통 30초~2분. 최대 8분
   let status = "";

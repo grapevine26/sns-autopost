@@ -27,8 +27,10 @@ for (const w of readdirSync(H).filter((d) => /^week\d$/.test(d))) {
     const id = `hugidam-${String(n).padStart(2, "0")}`;
     const video = `media/hugidam/${String(n).padStart(2, "0")}.mp4`;
     copyFileSync(`${H}/${w}/${m[3]}`, video);
+    const cover = video.replace(".mp4", ".jpg");
+    copyFileSync(`${H}/${w}/${m[3].replace(".mp4", "_cover.jpg")}`, cover);
     // 표지 = 첫 장면이 자리 잡은 프레임(render.cjs가 표지를 첫 장면 끝 0.05초 전에서 뜬다)
-    items.push({ id, account: "hugidam", at: `${date} ${T_HUGIDAM}`, title: m[2].replace(/^[A-D]\d\d\s*/, ""), video, caption: m[4].trimEnd(), thumbOffsetMs: 3900 });
+    items.push({ id, account: "hugidam", at: `${date} ${T_HUGIDAM}`, title: m[2].replace(/^[A-D]\d\d\s*/, ""), video, cover, caption: m[4].trimEnd(), thumbOffsetMs: 3900 });
   }
 }
 
@@ -42,8 +44,10 @@ for (const r of reels) {
   const key = "r" + String(r.n).padStart(2, "0");
   const video = `media/saju/${key}.mp4`;
   copyFileSync(`${S}/v/${key}.mp4`, video);
+  const cover = `media/saju/${key}.jpg`;
+  copyFileSync(`${S}/v/${key}.jpg`, cover);
   // 표지 = 그리드 커버와 같은 첫 장면(골든 윈도우만 1.4초) — make-upload.mjs와 같은 값
-  items.push({ id: `saju-${key}`, account: "saju", at: `${date} ${T_SAJU}`, title: r.title, video, caption: r.caption.trimEnd(), thumbOffsetMs: r.title === "골든 윈도우" ? 1400 : 400 });
+  items.push({ id: `saju-${key}`, account: "saju", at: `${date} ${T_SAJU}`, title: r.title, video, cover, caption: r.caption.trimEnd(), thumbOffsetMs: r.title === "골든 윈도우" ? 1400 : 400 });
 }
 
 items.sort((a, b) => a.at.localeCompare(b.at) || a.account.localeCompare(b.account));

@@ -84,4 +84,4 @@ node scripts/build-queue.mjs --from 2026-11-04 --hugidam-time 21:00 --saju-time 
 { "id": "saju-r17", "account": "saju", "at": "2026-11-23 22:00", "title": "제목", "video": "media/saju/r17.mp4", "caption": "캡션과 해시태그", "thumbOffsetMs": 400 }
 ```
 
-`id`는 겹치면 안 된다. `thumbOffsetMs`는 표지로 쓸 장면의 시각(밀리초)이다.
+`id`는 겹치면 안 된다. 표지는 `"cover": "media/saju/r17.jpg"`(표지 이미지, JPEG)가 있으면 그걸 쓰고, 없으면 `thumbOffsetMs`(영상 속 장면의 시각, 밀리초)를 쓴다.
