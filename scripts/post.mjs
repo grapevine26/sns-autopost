@@ -53,6 +53,8 @@ async function publish(item, acc) {
     if (status === "ERROR" || status === "EXPIRED") throw new Error(`영상 처리 실패: ${s.status || status}`);
   }
   if (status !== "FINISHED") throw new Error(`영상 처리가 8분 안에 끝나지 않았어요(${status})`);
+  // 시험 모드: 인스타가 영상·표지·캡션을 받아 처리까지 끝내는지만 보고 게시하지 않는다(만든 컨테이너는 24시간 뒤 사라짐)
+  if (process.env.PREPARE_ONLY === "1") return { prepared: container.id };
   const media = await ig("POST", `/${igId}/media_publish`, { creation_id: container.id });
   const info = await ig("GET", `/${media.id}`, { fields: "permalink" }).catch(() => ({}));
   return { mediaId: media.id, permalink: info.permalink || "" };
@@ -73,7 +75,7 @@ for (const [account, acc] of Object.entries(accounts)) {
     console.log(`[${account}] ${q.id} 예정 ${q.at} — ${LATE_MS / 3600_000}시간 넘게 지나 건너뜀`);
     if (!DRY) { posted[q.id] = { skipped: "late", at: new Date().toISOString() }; save(); }
   }
-  const next = due.find((q) => now - kst(q.at).getTime() <= LATE_MS);
+  const next = process.env.PREPARE_ONLY === "1" ? mine[0] : due.find((q) => now - kst(q.at).getTime() <= LATE_MS);
   if (!next) {
     const upcoming = mine.find((q) => kst(q.at).getTime() > now);
     console.log(`[${account}] 지금 올릴 편 없음${upcoming ? ` — 다음: ${upcoming.id} ${upcoming.at}` : " — 대기열 끝"}`);
@@ -83,6 +85,7 @@ for (const [account, acc] of Object.entries(accounts)) {
     console.log(`[${account}] @${acc.username} ← ${next.id} (예정 ${next.at}) ${next.title || ""}`);
     if (DRY) { console.log(`  DRY_RUN: ${PAGES_BASE}/${next.video}\n  ${next.caption.split("\n")[0]}`); continue; }
     const r = await publish(next, acc);
+    if (r.prepared) { console.log(`  시험 통과 ✓ 인스타가 영상 처리까지 끝냄(게시는 안 함)`); continue; }
     posted[next.id] = { ...r, at: new Date().toISOString() };
     save();
     console.log(`  올림 ✓ ${r.permalink}`);

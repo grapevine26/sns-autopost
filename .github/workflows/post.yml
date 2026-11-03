@@ -11,6 +11,10 @@ on:
         description: "올리지 않고 무엇을 올릴지만 보기"
         type: boolean
         default: true
+      prepare_only:
+        description: "시험: 다음 편을 인스타에 보내 처리까지만 하고 게시하지 않기"
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -34,6 +38,7 @@ jobs:
           IG_TOKEN_SAJU: ${{ secrets.IG_TOKEN_SAJU }}
           PAGES_BASE: ${{ vars.PAGES_BASE || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+          PREPARE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.prepare_only && '1' || '0' }}
         run: node scripts/post.mjs
       - name: 올린 기록 저장
         if: always()
