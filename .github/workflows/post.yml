@@ -1,5 +1,6 @@
-# 매시간 대기열을 보고 올릴 차례가 된 릴스를 계정마다 한 편씩 올린다.
-# GitHub의 예약 실행은 몇 분~수십 분 늦을 수 있다 — 21:00 예정이면 보통 21:10~21:30 사이에 올라간다.
+# 대기열을 보고 올릴 차례가 된 릴스를 계정마다 한 편씩 올린다.
+# GitHub의 예약 실행은 몇 시간씩 안 돌 때가 있다(2026-11-04: 6시간 넘게 0회). 2시간 넘게 늦은 편은
+# 새벽에 올리지 않고 하루씩 미룬다(scripts/post.mjs). 정시 실행은 바깥에서 깨워 주는 장치가 맡는다.
 name: 릴스 자동 게시
 on:
   schedule:
@@ -25,7 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      # 실행을 시작한 시점의 커밋이 아니라 지금의 main을 받는다. 실행이 겹쳐 줄을 섰다가 돌 때,
+      # 앞 실행이 남긴 게시 기록(posted.json)을 봐야 같은 편을 두 번 올리지 않는다.
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -43,10 +48,11 @@ jobs:
       - name: 올린 기록 저장
         if: always()
         run: |
-          if ! git diff --quiet posted.json; then
+          if ! git diff --quiet posted.json queue.json; then
             git config user.name "sns-autopost"
             git config user.email "actions@users.noreply.github.com"
-            git add posted.json
+            git add posted.json queue.json
             git commit -m "게시 기록 $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull --rebase
             git push
           fi

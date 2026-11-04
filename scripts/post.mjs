@@ -11,18 +11,25 @@
 //   IG_TOKEN_HUGIDAM, IG_TOKEN_SAJU  (예전 방식) 계정별 인스타 로그인 접근 키. 없는 계정은 건너뛴다.
 //   PAGES_BASE                        영상 주소 앞부분 (예: https://아이디.github.io/sns-autopost)
 //   DRY_RUN=1                         올리지 않고 무엇을 올릴지만 출력
-//   LATE_LIMIT_HOURS                  예정 시각에서 이만큼 넘게 지난 편은 올리지 않고 건너뜀 (기본 36)
+//   LATE_LIMIT_HOURS                  예정 시각에서 이만큼 넘게 지나도록 못 올린 편은 지금 올리지 않고,
+//                                     그 계정의 남은 편을 하루 단위로 미룬다 (기본 2)
 import { readFileSync, writeFileSync } from "node:fs";
 import { call, resolveAccounts } from "./lib.mjs";
 
 const DRY = process.env.DRY_RUN === "1";
-const LATE_MS = Number(process.env.LATE_LIMIT_HOURS || 36) * 3600_000;
+const PREPARE = process.env.PREPARE_ONLY === "1";
+// GitHub 예약 실행은 몇 시간씩 안 돌 때가 있다(2026-11-04: 19:51 이후 6시간 넘게 0회 → 21·22시 편을 놓침).
+// 그러다 새벽에 돌면 밤 9시 편이 새벽 4시에 올라가므로, 많이 늦은 편은 올리지 않고 다음 날 같은 시각으로 민다.
+// 건너뛰지 않고 미루는 이유: 준비한 편이 하나도 사라지지 않고, 하루 한 편 간격도 그대로 유지된다.
+const LATE_MS = Number(process.env.LATE_LIMIT_HOURS || 2) * 3600_000;
+const DAY_MS = 86_400_000;
 const PAGES_BASE = (process.env.PAGES_BASE || "").replace(/\/$/, "");
 
 const queue = JSON.parse(readFileSync("queue.json", "utf8"));
 const posted = JSON.parse(readFileSync("posted.json", "utf8"));
 const save = () => writeFileSync("posted.json", JSON.stringify(posted, null, 2) + "\n");
 const kst = (s) => new Date(s.replace(" ", "T") + ":00+09:00"); // "2026-11-04 21:00" (한국 시간)
+const kstText = (ms) => new Date(ms + 9 * 3600_000).toISOString().slice(0, 16).replace("T", " "); // kst()의 반대
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function publish(item, acc) {
@@ -54,7 +61,7 @@ async function publish(item, acc) {
   }
   if (status !== "FINISHED") throw new Error(`영상 처리가 8분 안에 끝나지 않았어요(${status})`);
   // 시험 모드: 인스타가 영상·표지·캡션을 받아 처리까지 끝내는지만 보고 게시하지 않는다(만든 컨테이너는 24시간 뒤 사라짐)
-  if (process.env.PREPARE_ONLY === "1") return { prepared: container.id };
+  if (PREPARE) return { prepared: container.id };
   const media = await ig("POST", `/${igId}/media_publish`, { creation_id: container.id });
   const info = await ig("GET", `/${media.id}`, { fields: "permalink" }).catch(() => ({}));
   return { mediaId: media.id, permalink: info.permalink || "" };
@@ -62,20 +69,28 @@ async function publish(item, acc) {
 
 const now = Date.now();
 let failed = 0;
+let queueChanged = false;
 const { accounts } = await resolveAccounts();
 for (const [account, acc] of Object.entries(accounts)) {
   const mine = queue.filter((q) => q.account === account && !posted[q.id]).sort((a, b) => kst(a.at) - kst(b.at));
+  // 제때 못 올린 편이 있으면 그 계정의 남은 편을 모두 같은 날수만큼 미룬다(하루 한 편 간격 유지).
+  // 미룬 결과가 아직 늦음 허용 범위 안이면(예: 어제 편을 놓쳤고 지금이 오늘 21:30) 바로 아래에서 지금 올린다.
+  const first = mine[0];
+  if (first && !PREPARE && now - kst(first.at).getTime() > LATE_MS) {
+    const days = Math.ceil((now - LATE_MS - kst(first.at).getTime()) / DAY_MS);
+    const was = first.at;
+    for (const q of mine) q.at = kstText(kst(q.at).getTime() + days * DAY_MS);
+    queueChanged = true;
+    // 실패로 끝내 GitHub가 메일을 보내게 한다 — 실행이 제때 안 돈 걸 알아야 하므로
+    failed++;
+    console.error(`[${account}] ${first.id}(예정 ${was})를 제때 못 올려 남은 ${mine.length}편을 ${days}일씩 미뤘어요 → ${first.id} ${first.at}`);
+  }
   const due = mine.filter((q) => kst(q.at).getTime() <= now);
   if (acc.error) {
     if (due.length) { console.error(`[${account}] 올릴 차례 ${due.length}편이 있지만 계정 연결 실패: ${acc.error}`); failed++; }
     continue;
   }
-  // 너무 늦은 편은 올리지 않는다(며칠 밀린 걸 한꺼번에 쏟아내지 않게) — 기록만 남긴다
-  for (const q of due.filter((q) => now - kst(q.at).getTime() > LATE_MS)) {
-    console.log(`[${account}] ${q.id} 예정 ${q.at} — ${LATE_MS / 3600_000}시간 넘게 지나 건너뜀`);
-    if (!DRY) { posted[q.id] = { skipped: "late", at: new Date().toISOString() }; save(); }
-  }
-  const next = process.env.PREPARE_ONLY === "1" ? mine[0] : due.find((q) => now - kst(q.at).getTime() <= LATE_MS);
+  const next = PREPARE ? mine[0] : due[0];
   if (!next) {
     const upcoming = mine.find((q) => kst(q.at).getTime() > now);
     console.log(`[${account}] 지금 올릴 편 없음${upcoming ? ` — 다음: ${upcoming.id} ${upcoming.at}` : " — 대기열 끝"}`);
@@ -94,5 +109,6 @@ for (const [account, acc] of Object.entries(accounts)) {
     console.error(`[${account}] ${next.id} 실패: ${e.message}`);
   }
 }
-// 실패가 있으면 워크플로를 실패로 끝낸다 → GitHub가 메일로 알려 준다. 다음 시간에 같은 편을 다시 시도한다.
+if (queueChanged && !DRY) writeFileSync("queue.json", JSON.stringify(queue, null, 2) + "\n");
+// 실패가 있으면 워크플로를 실패로 끝낸다 → GitHub가 메일로 알려 준다. 다음 실행에서 같은 편을 다시 시도한다.
 process.exit(failed ? 1 : 0);
