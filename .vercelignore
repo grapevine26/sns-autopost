@@ -1,0 +1,10 @@
+# Vercel에는 크론 함수(api/)만 올린다. 영상(87MB)·대기열·게시 기록은 GitHub 쪽 것이다.
+media
+scripts
+.github
+queue.json
+posted.json
+accounts.json
+README.md
+.nojekyll
+.env*

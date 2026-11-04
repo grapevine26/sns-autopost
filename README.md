@@ -11,7 +11,7 @@
 ## 알아 둘 한계
 
 1. **인스타 음악을 넣을 수 없다.** 인스타 라이선스 음악은 앱에서만 붙는다. API로 올린 릴스는 영상 그대로(지금은 무음) 올라간다.
-2. **GitHub 예약 실행은 믿을 수 없다.** 10분마다로 걸어 둬도 몇 시간씩 안 돌 때가 있다(2026-11-04: 19:51 이후 6시간 넘게 한 번도 안 돌아 21·22시 편을 놓침). 정시에 올리려면 바깥에서 실행을 깨워 주는 장치가 필요하다.
+2. **GitHub 예약 실행은 믿을 수 없다.** 10분마다로 걸어 둬도 몇 시간씩 안 돌 때가 있다(2026-11-04: 19:51 이후 6시간 넘게 한 번도 안 돌아 21·22시 편을 놓침). 그래서 정시 실행은 Vercel 크론이 맡는다(아래 "정시 실행"). GitHub 예약 실행은 예비로 남겨 둔다.
 3. **저장소가 공개다.** GitHub Pages(무료)로 영상 주소를 내주려면 공개 저장소여야 한다. 아직 안 올라간 영상·캡션도 저장소에서 보인다. 접근 키는 Secrets에 있어 보이지 않는다.
 4. **접근 키는 60일마다 만료된다.** 매주 자동 갱신한다(아래 5단계의 GH_PAT가 있을 때).
 
@@ -92,3 +92,18 @@ node scripts/build-queue.mjs --start 2026-11-04 --every 1 --hugidam-time 21:00 -
 ```
 
 `id`는 겹치면 안 된다. 표지는 `"cover": "media/saju/r17.jpg"`(표지 이미지, JPEG)가 있으면 그걸 쓰고, 없으면 `thumbOffsetMs`(영상 속 장면의 시각, 밀리초)를 쓴다.
+
+## 정시 실행 (Vercel 크론)
+
+Vercel 프로젝트 `sns-autopost`(주소 `sns-autopost-kappa.vercel.app`, `sns-autopost.vercel.app`은 남의 프로젝트라 쓰지 말 것)의 `api/trigger.js`를 `vercel.json`의 크론이 매일 부르고, 이 함수가 GitHub API로 "릴스 자동 게시"를 실행한다. API로 실행하면 몇 초 안에 시작한다. 워크플로는 올릴 차례가 된 편만 올리므로 여러 번 깨워도 같은 편이 두 번 올라가지 않는다.
+
+- **시각:** `0 12 * * *`, `0 13 * * *`(UTC) = 한국 21시·22시. 무료 플랜은 그 시각부터 59분 안의 어느 때에 부른다.
+- **처음 설정·토큰 바꾸기:** GitHub에서 세분화 토큰을 만든다(https://github.com/settings/personal-access-tokens/new — 저장소는 `sns-autopost`만, 권한은 Actions "Read and write"만). 그다음 이 폴더에서 실행한다. 토큰을 확인한 뒤 Vercel에 값 2개(`GH_DISPATCH_TOKEN`, `CRON_SECRET`)를 저장하고 다시 배포한다.
+
+```bash
+node scripts/setup-trigger.mjs
+```
+
+- **토큰 만료:** 만료일 전에 새 토큰으로 위 명령을 다시 실행한다. 만료되면 정시 실행이 멈추고, 늦은 편이 하루씩 밀리며 GitHub가 실패 메일을 보낸다.
+- **시각 바꾸기:** `vercel.json`의 schedule(UTC)을 고치고 `npx vercel deploy --prod --scope grapevine26s-projects`. 이 프로젝트는 git 푸시로 배포되지 않는다(`git.deploymentEnabled: false` — 게시 기록 커밋마다 배포되지 않게).
+- **바로 시험하기:** `npx vercel crons run /api/trigger --scope grapevine26s-projects` (올릴 차례인 편이 없으면 확인만 하고 끝난다).
